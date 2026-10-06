@@ -1,0 +1,10 @@
+# 临时文件
+_probe*.html
+_probe*.py
+*.log
+__pycache__/
+*.pyc
+
+# 本地环境与密钥（永远不要提交）
+.env
+*.local

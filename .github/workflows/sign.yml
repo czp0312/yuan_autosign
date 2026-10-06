@@ -1,0 +1,41 @@
+name: ycoo auto sign
+
+on:
+  schedule:
+    # 每天 UTC 00:30（北京时间 08:30）自动签到
+    - cron: '30 0 * * *'
+  workflow_dispatch: # 支持在 Actions 页面手动触发
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ycoo-sign
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run sign script
+        env:
+          YCOO_USERNAME: ${{ secrets.YCOO_USERNAME }}
+          YCOO_PASSWORD: ${{ secrets.YCOO_PASSWORD }}
+          YCOO_QUESTION_ID: ${{ secrets.YCOO_QUESTION_ID }}
+          YCOO_ANSWER: ${{ secrets.YCOO_ANSWER }}
+        run: python sign.py
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::签到失败，请检查仓库 Secrets（YCOO_USERNAME / YCOO_PASSWORD）或站点是否改版。"
+          exit 1
