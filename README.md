@@ -62,6 +62,12 @@ YCOO_USERNAME="你的用户名" YCOO_PASSWORD="你的密码" python sign.py
 3. `GET plugin.php?id=k_misign:sign` 取签到页 `formhash`
 4. 依次尝试 `k_misign` 常见签到端点（`operation=qiandao` 等），识别「签到成功 / 今日已签」
 
+## 自动保活
+
+GitHub 会在仓库 60 天无活动后自动停用定时 Actions。为避免签到任务被停用，`keepalive` 工作流在**每月 1 号北京时间 11:00** 自动更新下面的时间戳并提交推送（也可在 Actions 页面手动触发）：
+
+最近自动保活：2026-10-06 13:27 UTC
+
 ## 免责声明
 
 仅供个人学习与自动化个人账号操作使用，请遵守目标站点的服务条款，勿用于任何商业或批量用途。

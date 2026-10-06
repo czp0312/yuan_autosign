@@ -1,0 +1,37 @@
+name: keepalive
+
+on:
+  schedule:
+    # 每月 1 号 UTC 03:00（北京时间 11:00）更新 README，保持仓库活跃
+    - cron: '0 3 1 * *'
+  workflow_dispatch: # 支持在 Actions 页面手动触发
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  touch-readme:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 更新 README 保活时间戳
+        run: python3 .github/scripts/keepalive.py
+
+      - name: 提交并推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff --cached --quiet; then
+            echo "README 无变化，跳过提交"
+          else
+            git commit -m "chore: 每月保活更新 README 时间戳"
+            git push
+          fi
