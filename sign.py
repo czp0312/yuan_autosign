@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import http.cookiejar
@@ -25,8 +26,11 @@ import http.cookiejar
 BASE = os.environ.get("YCOO_BASE", "https://ycoo.net").rstrip("/")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-TIMEOUT = 30
-RETRIES = int(os.environ.get("YCOO_RETRIES", "3"))
+TIMEOUT = 15
+try:
+    RETRIES = max(1, int(os.environ.get("YCOO_RETRIES", "3")))
+except ValueError:
+    RETRIES = 3
 
 
 class Browser:
@@ -63,7 +67,9 @@ class Browser:
             try:
                 resp = self.opener.open(req, timeout=TIMEOUT)
                 return resp.geturl(), resp.read().decode("utf-8", "ignore")
-            except Exception as e:  # 网络抖动重试
+            except urllib.error.HTTPError:
+                raise  # HTTP 错误状态码不重试
+            except (urllib.error.URLError, ConnectionError, TimeoutError) as e:  # 网络抖动才重试
                 last_err = e
                 if attempt < RETRIES:
                     time.sleep(3 * attempt)
@@ -107,9 +113,9 @@ def login(browser, username, password, question_id, answer):
         return "fail", "登录尝试过于频繁，站点限制了 IP，请稍后再试"
     if "密码错误" in clean or "登录失败" in clean or "成员不存在" in clean or "没有此成员" in clean:
         return "fail", clean
-    # 无明确提示时用 /home.php?mod=space 验证会话是否生效
+    # 无明确提示时用 /home.php?mod=space 验证会话是否生效（已登录页面带退出链接）
     url, home = browser.get(f"{BASE}/home.php?mod=space&do=notice")
-    if "member.php?mod=logging" not in home and "formhash" in home:
+    if "action=logout" in home and "formhash" in home:
         return "ok", f"无明确登录提示，但会话已生效 ({url})"
     return "fail", clean or "未识别的登录响应"
 
@@ -120,27 +126,33 @@ def kmi_sign(browser, formhash):
     状态: done=今日已签 / signed=本次签到成功 / fail=失败
     """
     candidates = [
-        f"{BASE}/plugin.php?id=k_misign:sign&operation=qiandao&formhash={formhash}",
-        f"{BASE}/plugin.php?id=k_misign:sign:sign&operation=qiandao&formhash={formhash}",
-        f"{BASE}/plugin.php?id=k_misign:sign&mod=sign&operation=qiandao&formhash={formhash}",
-        f"{BASE}/plugin.php?id=k_misign:sign&operation=sign&formhash={formhash}",
-        f"{BASE}/plugin.php?id=k_misign:sign&operation=qiandao",
+        f"{BASE}/plugin.php?id=k_misign:sign&operation=qiandao&formhash={formhash}&inajax=1",
+        f"{BASE}/plugin.php?id=k_misign:sign:sign&operation=qiandao&formhash={formhash}&inajax=1",
+        f"{BASE}/plugin.php?id=k_misign:sign&mod=sign&operation=qiandao&formhash={formhash}&inajax=1",
+        f"{BASE}/plugin.php?id=k_misign:sign&operation=sign&formhash={formhash}&inajax=1",
+        f"{BASE}/plugin.php?id=k_misign:sign&operation=qiandao&inajax=1",
     ]
     referer = f"{BASE}/plugin.php?id=k_misign:sign"
     results = []
     for url in candidates:
         try:
             _, resp = browser.get(url, referer=referer)
-        except Exception as e:
+        except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
             results.append((url, f"请求异常: {e}"))
             continue
         clean = re.sub(r"<!\[CDATA\[|\]\]>", "", resp).strip()
         low = clean.lower()
-        if any(k in low for k in ("已签", "已经签", "已签到", "sign done", "already")):
+        if "已签" in clean or "已经签" in clean or "already" in low:
             return "done", clean
-        if any(k in low for k in ("签到成功", "success", "恭喜", "奖励", "获赠")):
+        # 只认精确短语或 Discuz ajax 的 <root> 包裹响应，避免误匹配页面正常文案
+        if "签到成功" in clean or ("<root" in low and "success" in low):
             return "signed", clean
         results.append((url, clean[:120] or "(空响应)"))
+
+    # 全部候选失败后回读签到页复核是否实际已签到
+    _, page = browser.get(referer, referer=BASE + "/")
+    if "已签到" in page and "立即签到" not in page and "我要签到" not in page:
+        return "done", "候选端点无明确响应，但签到页显示已签到"
     return "fail", " | ".join(f"{u} => {r}" for u, r in results)
 
 
@@ -160,7 +172,7 @@ def main():
 
     print("[1/3] 登录 ...")
     status, detail = login(browser, username, password, question_id, answer)
-    print("      =>", detail[:200].replace("\n", " "))
+    print("      =>", detail[:200].replace(username, "***").replace("\n", " "))
     if status != "ok":
         print("[FATAL] 登录失败")
         return 1
@@ -168,8 +180,8 @@ def main():
     print("[2/3] 打开签到页获取 formhash ...")
     sign_page_url = f"{BASE}/plugin.php?id=k_misign:sign"
     _, sign_page = browser.get(sign_page_url, referer=BASE + "/")
-    if "member.php?mod=logging" in sign_page:
-        print("[FATAL] 会话未生效，签到页仍指向登录页")
+    if "action=logout" not in sign_page:
+        print("[FATAL] 会话未生效，签到页仍为游客视图")
         return 1
     fh = formhash_of(sign_page)
     print("      formhash =", fh or "(未找到)")
@@ -193,4 +205,8 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except RuntimeError as e:
+        print(f"[FATAL] {e}")
+        sys.exit(1)

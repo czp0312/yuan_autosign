@@ -21,7 +21,7 @@
 
 ### 2. 运行
 
-- **自动运行**：工作流每天 UTC 00:30（北京时间 08:30）自动触发。注意 GitHub Actions 的 cron 有约 5–30 分钟的调度延迟，属正常现象。
+- **自动运行**：工作流每天 UTC 00:30（北京时间 08:30）自动触发。注意 GitHub Actions 的 cron 有约 5–30 分钟的调度延迟，属正常现象。schedule 仅在**默认分支**生效；仓库 **60 天无任何活动**后 Actions 会被自动停用，届时需手动重新启用。
 - **手动运行**：仓库 → **Actions** → 选择 **ycoo auto sign** → **Run workflow**。
 
 ### 3. 查看结果
@@ -30,6 +30,8 @@
 
 - `[SUCCESS] 签到成功` / `[SUCCESS] 今日已签到` —— 正常
 - `[FATAL] 登录失败` —— 检查 Secrets 是否正确、账号是否被站点限制
+- `[FATAL] 会话未生效` —— 登录表面成功但会话无效，站点可能改版或启用了额外验证
+- `[FATAL] 签到页未找到 formhash` —— 签到页结构变化，参考下方本地调试
 - `[FATAL] 签到失败` —— 站点签到接口可能改版，参考下方本地调试
 
 ### 本地调试
@@ -44,7 +46,14 @@ python sign.py
 YCOO_USERNAME="你的用户名" YCOO_PASSWORD="你的密码" python sign.py
 ```
 
-需要走本地代理时，可在 `sign.py` 顶部按需加 `urllib.request.ProxyHandler`，或设置系统代理环境变量。
+可选环境变量（仅本地调试用，Actions 里无需配置）：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `YCOO_BASE` | `https://ycoo.net` | 站点地址（站点换域名时改这个） |
+| `YCOO_RETRIES` | `3` | 单请求网络重试次数 |
+
+需要走本地代理时，`urllib` 默认读取 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量，例如 PowerShell 里 `$env:HTTPS_PROXY = "http://127.0.0.1:7890"`。
 
 ## 工作原理
 
