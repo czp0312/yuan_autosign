@@ -2,8 +2,11 @@ name: ycoo auto sign
 
 on:
   schedule:
-    # 每天 UTC 00:30（北京时间 08:30）自动签到
-    - cron: '30 0 * * *'
+    # 主班次：UTC 00:17（北京时间 08:17）。避开整点/半点的调度高峰，
+    # GitHub cron 在高峰时段可能延迟数十分钟甚至偶发丢弃班次。
+    - cron: '17 0 * * *'
+    # 兜底班次：UTC 01:37（北京时间 09:37）。主班次被延迟/丢弃时仍能当天补签。
+    - cron: '37 1 * * *'
   workflow_dispatch: # 支持在 Actions 页面手动触发
 
 permissions:
